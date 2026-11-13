@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="local/alertatemprana/db" VERSION="2026110501" COMMENT="Alerta temprana: predicciones y acciones (imitan analytics_predictions y analytics_prediction_actions)"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd"
+>
+  <TABLES>
+    <TABLE NAME="local_alertatemprana_run" COMMENT="Una publicación de predicciones de un curso en un momento (P12)">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="cut" TYPE="char" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="Ajuste del modelo aplicado: first, mid o last"/>
+        <FIELD NAME="reason" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="notas" SEQUENCE="false" COMMENT="notas (evaluación completa) o profesor (a petición)"/>
+        <FIELD NAME="requestedby" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Profesor que la pidió"/>
+        <FIELD NAME="modelversion" TYPE="char" LENGTH="50" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="threshold" TYPE="number" LENGTH="10" NOTNULL="true" SEQUENCE="false" DECIMALS="5"/>
+        <FIELD NAME="cutoffday" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="Día del curso de la predicción"/>
+        <FIELD NAME="timeend" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="Fin del periodo analizado (Unix)"/>
+        <FIELD NAME="anchorcmid" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Evaluación de referencia (ancla)"/>
+        <FIELD NAME="info" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="JSON: datos de la ejecución"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="courseid" TYPE="foreign" FIELDS="courseid" REFTABLE="course" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="coursetime" UNIQUE="false" FIELDS="courseid, timecreated"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="local_alertatemprana_pred" COMMENT="Predicción de un estudiante en un corte (como analytics_predictions)">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="runid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="Estudiante"/>
+        <FIELD NAME="prediction" TYPE="int" LENGTH="1" NOTNULL="true" SEQUENCE="false" COMMENT="1 = en riesgo (probabilidad >= umbral)"/>
+        <FIELD NAME="predictionscore" TYPE="number" LENGTH="10" NOTNULL="true" SEQUENCE="false" DECIMALS="5" COMMENT="Probabilidad de riesgo"/>
+        <FIELD NAME="calculations" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="JSON: variables, valores y aportes"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="runid" TYPE="foreign" FIELDS="runid" REFTABLE="local_alertatemprana_run" REFFIELDS="id"/>
+        <KEY NAME="userid" TYPE="foreign" FIELDS="userid" REFTABLE="user" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="runuser" UNIQUE="true" FIELDS="runid, userid"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="local_alertatemprana_act" COMMENT="Acción de un profesor sobre una predicción (como analytics_prediction_actions)">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="predictionid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="Profesor"/>
+        <FIELD NAME="actionname" TYPE="char" LENGTH="50" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="predictionid" TYPE="foreign" FIELDS="predictionid" REFTABLE="local_alertatemprana_pred" REFFIELDS="id"/>
+      </KEYS>
+    </TABLE>
+    <TABLE NAME="local_alertatemprana_req" COMMENT="Solicitudes de predicción pendientes y atendidas (P12)">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="reason" TYPE="char" LENGTH="20" NOTNULL="true" SEQUENCE="false" COMMENT="notas o profesor"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Profesor que la pidió"/>
+        <FIELD NAME="status" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="0 pendiente, 1 atendida"/>
+        <FIELD NAME="message" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Resultado de la solicitud"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="timeprocessed" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="courseid" TYPE="foreign" FIELDS="courseid" REFTABLE="course" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="statuscourse" UNIQUE="false" FIELDS="status, courseid"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="local_alertatemprana_cfg" COMMENT="Tipos de evaluación que el profesor eligió para su curso (P20)">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="types" TYPE="char" LENGTH="255" NOTNULL="true" DEFAULT="assign" SEQUENCE="false" COMMENT="Tipos de módulo separados por comas; assign siempre"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="courseid" TYPE="foreign-unique" FIELDS="courseid" REFTABLE="course" REFFIELDS="id"/>
+      </KEYS>
+    </TABLE>
+  </TABLES>
+</XMLDB>

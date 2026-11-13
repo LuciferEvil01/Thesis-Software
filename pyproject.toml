@@ -1,0 +1,17 @@
+[project]
+name = "alerta"
+version = "0.1.0"
+description = "Alerta temprana de estudiantes en riesgo para Moodle"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+markers = ["slow: lee OULAD completo (minutos)", "moodle: necesita el Moodle local (make up)"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

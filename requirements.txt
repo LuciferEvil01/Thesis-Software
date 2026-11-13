@@ -1,0 +1,12 @@
+# Mismas versiones que Proposal (el modelo se entrenó con ellas).
+pandas==3.0.6
+numpy==2.5.3
+pyarrow==25.0.1
+scipy==1.18.1
+scikit-learn==1.9.1
+joblib==1.6.0
+# Propias del sistema
+requests>=2.32
+python-dotenv>=1.0
+pytest>=8
+openpyxl>=3.1

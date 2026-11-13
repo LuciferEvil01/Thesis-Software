@@ -1,0 +1,68 @@
+# Ajustes del laboratorio sobre moodle-docker (los usa infra/moodle/scripts/lab.sh).
+services:
+  selenium:
+    profiles: ["behat"]
+  webserver:
+    environment:
+      MOODLE_TECH_PASSWORD: "${MOODLE_TECH_PASSWORD}"
+      MOODLE_DEMO_PASSWORD: "${MOODLE_DEMO_PASSWORD:-Demo-Alerta-2026!}"
+    volumes:
+      - moodledata:/var/www/moodledata
+      - "${ALERTA_REPO_ROOT}/infra/moodle/fixtures:/opt/alerta:ro"
+      - "${ALERTA_REPO_ROOT}/.runtime/generated:/opt/alerta-generated"
+      - "${ALERTA_REPO_ROOT}/moodle/local/alertatemprana:/var/www/html/public/local/alertatemprana"
+    healthcheck:
+      # Antes de instalar Moodle responde 303; se comprueba Apache/PHP por socket.
+      test: ["CMD", "php", "-r", "$$s=@fsockopen('127.0.0.1',80,$$e,$$m,3); exit($$s===false?1:0);"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+  db:
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U moodle -d moodle"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  cron:
+    image: "moodlehq/moodle-php-apache:${MOODLE_DOCKER_PHP_VERSION}"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - "${MOODLE_DOCKER_WWWROOT}:/var/www/html"
+      - moodledata:/var/www/moodledata
+      - "${ALERTA_REPO_ROOT}/moodle/local/alertatemprana:/var/www/html/public/local/alertatemprana"
+    environment:
+      MOODLE_DOCKER_RUNNING: 1
+      MOODLE_DOCKER_DBTYPE: pgsql
+      MOODLE_DOCKER_DBNAME: moodle
+      MOODLE_DOCKER_DBUSER: moodle
+      MOODLE_DOCKER_DBPASS: "m@0dl3ing"
+      MOODLE_DOCKER_WEB_HOST: localhost
+      MOODLE_DOCKER_WEB_PORT: "${MOODLE_WEB_PORT_NUMBER}"
+    entrypoint: ["/bin/bash", "-c"]
+    command: ["while true; do php /var/www/html/admin/cli/cron.php || true; sleep 60; done"]
+    restart: unless-stopped
+  alerta-python:
+    image: "python:${ALERTA_PYTHON_VERSION}-slim"
+    working_dir: /workspace
+    volumes:
+      - "${ALERTA_REPO_ROOT}:/workspace"
+      - alerta_pip_cache:/root/.cache/pip
+    command: ["sleep", "infinity"]
+    profiles: ["python"]
+  adminer:
+    image: adminer:5.4.2
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${MOODLE_ADMINER_PORT}:8080"
+    profiles: ["diagnostic"]
+volumes:
+  moodledata:
+  postgres_data:
+  alerta_pip_cache:
