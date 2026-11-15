@@ -11,7 +11,8 @@ use core_external\external_value;
  * Nota de aprobado y rango de los ítems de módulo del libro de calificaciones de un curso (P16).
  *
  * Los servicios web estándar no devuelven la «calificación para aprobar» (gradepass), que hace
- * falta para convertir las notas en puntos a la escala del modelo.
+ * falta para convertir las notas en puntos a la escala del modelo, ni los elementos de la escala de
+ * un ítem calificado con escala, que hacen falta para leer sus notas (P21).
  */
 class get_gradeitems extends external_api {
 
@@ -25,15 +26,18 @@ class get_gradeitems extends external_api {
         $context = \context_course::instance($p['courseid']);
         self::validate_context($context);
         require_capability('local/alertatemprana:submit', $context);
-        $sql = "SELECT gi.id, cm.id AS cmid, gi.itemmodule, gi.grademin, gi.grademax, gi.gradepass
+        $sql = "SELECT gi.id, cm.id AS cmid, gi.itemmodule, gi.grademin, gi.grademax, gi.gradepass,
+                       gi.gradetype, s.scale
                   FROM {grade_items} gi
+             LEFT JOIN {scale} s ON s.id = gi.scaleid
                   JOIN {modules} m ON m.name = gi.itemmodule
                   JOIN {course_modules} cm ON cm.module = m.id AND cm.instance = gi.iteminstance AND cm.course = gi.courseid
                  WHERE gi.courseid = :courseid AND gi.itemtype = 'mod' AND gi.itemnumber = 0";
         $items = [];
         foreach ($DB->get_records_sql($sql, ['courseid' => $p['courseid']]) as $r) {
             $items[] = ['cmid' => (int)$r->cmid, 'module' => $r->itemmodule, 'grademin' => (float)$r->grademin,
-                'grademax' => (float)$r->grademax, 'gradepass' => (float)$r->gradepass];
+                'grademax' => (float)$r->grademax, 'gradepass' => (float)$r->gradepass,
+                'gradetype' => (int)$r->gradetype, 'scale' => (string)($r->scale ?? '')];
         }
         return $items;
     }
@@ -45,6 +49,8 @@ class get_gradeitems extends external_api {
             'grademin' => new external_value(PARAM_FLOAT, 'Nota mínima'),
             'grademax' => new external_value(PARAM_FLOAT, 'Nota máxima'),
             'gradepass' => new external_value(PARAM_FLOAT, 'Calificación para aprobar (0 = sin fijar)'),
+            'gradetype' => new external_value(PARAM_INT, 'Tipo de calificación: 1 puntuación, 2 escala'),
+            'scale' => new external_value(PARAM_RAW, 'Elementos de la escala separados por comas (vacío si no es escala)'),
         ]));
     }
 }

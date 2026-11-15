@@ -9,8 +9,9 @@ Uso:
 Lista: seis filas repartidas de la primera a la última de la lista completa (no consecutivas),
 sin la casilla, la columna «Estado» ni las acciones de respuesta a la alerta (aceptar, no aplicable,
 marcado incorrectamente), que la tesis no describe. Detalle: la página de la
-predicción de un estudiante. Petición (D6-07): la parte superior del informe, con el botón «Calcular
-predicciones ahora», las evaluaciones que se analizan y el historial. Actividad (D6-07): el informe
+predicción de un estudiante. Petición (P22): el panel de control del informe, con el botón «Calcular
+predicciones ahora» y el interruptor de los cuestionarios. Aviso (P22): la notificación de alerta
+temprana en la página principal del curso. Actividad (D6-07): el informe
 de actividad de Moodle del estudiante del detalle, que el informe enlaza en cada fila. Se ocultan la
 cabecera, los cajones y el pie de Moodle.
 """
@@ -106,15 +107,21 @@ a[href*="action=fixed"], a[href*="action=notapplicable"], a[href*="action=incorr
         region = d.find_element(By.CSS_SELECTOR, "#region-main")
         print("detalle:", guardar(d, region, salida / "informe_detalle.pdf"))
 
-        # Petición: el botón y las evaluaciones que se analizan; nada de lo que sigue
+        # Petición (P22): el panel de control del informe, con el botón «Calcular predicciones ahora»,
+        # el interruptor de los cuestionarios y, si las hay, las tareas que no se califican de 2 a 5
         ancho(d, 760)
         d.get(f"{BASE}/local/alertatemprana/index.php?id={curso}")
         css(d, CSS_COMUN)
-        d.execute_script(
-            "let x=document.querySelector('#region-main p.small.mb-3').nextElementSibling;"
-            "while(x){x.style.display='none'; x=x.nextElementSibling;}")
-        region = d.find_element(By.CSS_SELECTOR, "#region-main")
+        region = d.find_element(By.CSS_SELECTOR, "#alertatemprana-panel")
         print("petición:", guardar(d, region, salida / "informe_peticion.pdf"))
+
+        # Aviso en la página principal del curso (P22), solo la notificación
+        ancho(d, 1000)
+        d.get(f"{BASE}/course/view.php?id={curso}")
+        css(d, CSS_COMUN)
+        aviso = next(e for e in d.find_elements(By.CSS_SELECTOR, ".alert-info")
+                     if "Alerta temprana" in e.text)
+        print("aviso:", guardar(d, aviso, salida / "curso_aviso.pdf"))
 
         # Actividad: el informe de actividad de Moodle (report/outline) del mismo estudiante
         # (las ocho primeras páginas con vistas y todas las tareas; sin el botón «Atrás» ni los de

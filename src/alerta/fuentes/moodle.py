@@ -21,6 +21,12 @@ Reglas de traducción:
 - Tarea sin entregas en línea (ningún tipo de entrega activado: un examen presencial registrado como
   tarea; P17): todos los estudiantes cuentan como presentados en su fecha y el que todavía no tiene
   nota queda «sin calificar» (nota vacía), no como no entregado (0).
+- Escala de Moodle (P21): la nota es la posición del elemento (desde 1) y se traduce a su valor con
+  `calificacion.valores_escala` (elementos numéricos, o cuatro palabras → 2, 3, 4 y 5), con los
+  elementos de la escala que da `local_alertatemprana_get_gradeitems`.
+- Requisito de la escala de las tareas (P21): con una conversión de la institución (`exige_25`), las
+  tareas que no se califican de 2 a 5 no entran (`calificacion.excluir_tareas_fuera_de_escala`); el
+  informe las lista en `tareas_fuera_de_escala`.
 - Nota de 0 a 100: la decide un objeto `alerta.calificacion.Calificacion` (P8 y P16; por defecto,
   la conversión equipercentil), con la nota de aprobado del ítem (`local_alertatemprana_get_gradeitems`).
   La nota en la escala del curso se conserva en `grades.grade` y el rango del ítem en
@@ -38,12 +44,13 @@ from collections.abc import Callable
 import numpy as np
 import pandas as pd
 
-from alerta.calificacion import Calificacion, ItemCalificable, cargar
+from alerta.calificacion import Calificacion, ItemCalificable, cargar, excluir_tareas_fuera_de_escala, valores_escala
 from alerta.canonico import Canonico
 from alerta.moodle.cliente import Cliente
 
 DAY = 86400
 STUDENT_ROLES = frozenset({"student"})
+SCALE_TYPE = 2  # grade_items.gradetype de una escala de Moodle (1 = puntuación)
 
 
 def to_day(ts, start: int) -> float:
@@ -120,7 +127,9 @@ def extract_course(c: Cliente, courseid: int,
     due = _due_dates(c, courseid)
     offline = _offline_assigns(c, courseid)
     submissions = _assign_submissions(c, courseid)
-    gradepass = {g["cmid"]: g["gradepass"] for g in c.call("local_alertatemprana_get_gradeitems", courseid=courseid)}
+    gradeinfo = {g["cmid"]: g for g in c.call("local_alertatemprana_get_gradeitems", courseid=courseid)}
+    gradepass = {k: g["gradepass"] for k, g in gradeinfo.items()}
+    scale = {k: valores_escala(g["scale"]) if g.get("gradetype") == SCALE_TYPE else None for k, g in gradeinfo.items()}
     items, grades = {}, []
     # userid=0: el libro de calificaciones de todos los usuarios en una sola llamada (unas 18 veces más
     # rápido que una por estudiante en un curso de 338)
@@ -136,11 +145,17 @@ def extract_course(c: Cliente, courseid: int,
             cmid, module = g["cmid"], g["itemmodule"]
             if cmid not in items:
                 due_ts = due.get(cmid, (module, 0))[1]
+                values = scale.get(cmid)
+                gmin, gmax, gpass = ((min(values), max(values), 0.0) if values else
+                                     (float(g["grademin"]), float(g["grademax"]), float(gradepass.get(cmid, 0))))
                 items[cmid] = {"course_id": courseid, "item_id": cmid, "module_type": module,
-                               "due_day": to_day(due_ts, start), "grademax": float(g["grademax"]),
-                               "grademin": float(g["grademin"]), "gradepass": float(gradepass.get(cmid, 0))}
+                               "due_day": to_day(due_ts, start), "grademax": gmax,
+                               "grademin": gmin, "gradepass": gpass}
             submitted = submissions.get((cmid, userid))
             raw = g.get("graderaw")
+            if raw is not None and gradeinfo.get(cmid, {}).get("gradetype") == SCALE_TYPE:
+                values, i = scale.get(cmid), int(round(float(raw))) - 1
+                raw = values[i] if values and 0 <= i < len(values) else None
             in_person = module == "assign" and cmid in offline and due.get(cmid, (module, 0))[1]
             if submitted is None and (raw is not None or in_person):
                 submitted = g.get("gradedatesubmitted") or (due[cmid][1] if module == "assign" and cmid in due
@@ -156,6 +171,13 @@ def extract_course(c: Cliente, courseid: int,
 
     assessments = pd.DataFrame(list(items.values()), columns=["course_id", "item_id", "module_type", "due_day",
                                                               "grademax", "grademin", "gradepass"])
+    grades = pd.DataFrame(grades, columns=["course_id", "item_id", "student_id", "submitted_day", "score",
+                                           "graded_day", "grade"])
+    out_of_scale = []
+    if getattr(calificacion, "exige_25", False):
+        assessments, grades, out_of_scale = excluir_tareas_fuera_de_escala(assessments, grades)
+        if out_of_scale:
+            warnings.append(f"tareas que no se califican de 2 a 5 (no entran): {out_of_scale}")
     assessments["is_tma"] = ((assessments["module_type"] == "assign") & (assessments["grademax"] > 0)
                              & assessments["due_day"].notna())
     undated = assessments.loc[assessments["due_day"].isna(), "module_type"].value_counts().to_dict()
@@ -170,12 +192,12 @@ def extract_course(c: Cliente, courseid: int,
         students=pd.DataFrame({"course_id": courseid, "student_id": students, "unregistered_day": np.nan,
                                "repeated": np.nan}),
         assessments=assessments,
-        grades=pd.DataFrame(grades, columns=["course_id", "item_id", "student_id", "submitted_day", "score",
-                                             "graded_day", "grade"]),
+        grades=grades,
         activity=act[["course_id", "student_id", "day", "site_id", "events"]].reset_index(drop=True),
     ).validate()
     report = {"courseid": courseid, "fullname": course["fullname"], "students": len(students),
               "items": len(assessments), "tmas": int(assessments["is_tma"].sum()), "grades": len(grades),
               "events": int(act["events"].sum()), "calificacion": calificacion.nombre,
-              "tareas_sin_entrega_en_linea": sorted(offline & set(items)), "warnings": warnings}
+              "tareas_sin_entrega_en_linea": sorted(offline & set(assessments["item_id"])),
+              "tareas_fuera_de_escala": out_of_scale, "warnings": warnings}
     return d, report

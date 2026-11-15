@@ -33,7 +33,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from alerta.calificacion import Calificacion, ItemCalificable
+from alerta.calificacion import Calificacion, ItemCalificable, excluir_tareas_fuera_de_escala, valores_escala
 from alerta.canonico import Canonico
 
 DAY = 86400
@@ -43,7 +43,6 @@ ENROL_CREATED = "\\core\\event\\user_enrolment_created"
 ENROL_DELETED = "\\core\\event\\user_enrolment_deleted"
 ROLE_ASSIGNED = "\\core\\event\\role_assigned"
 DUE_FIELD = {"assign": "duedate", "quiz": "timeclose"}  # tipos con regla de fecha (como `fuentes.moodle`)
-SCALE_25_WORDS = 4  # una escala de cuatro elementos no numéricos se lee como 2, 3, 4 y 5 (Mal…Excelente)
 
 
 def leer(folder: Path, name: str, required: bool = True) -> pd.DataFrame | None:
@@ -60,15 +59,12 @@ def to_day(ts, start) -> float:
 
 
 def _scale_values(scale: pd.DataFrame | None) -> dict[int, list[float]]:
-    """scaleid → valores numéricos de sus elementos, en orden (la nota de escala es un índice desde 1)."""
+    """scaleid → valores numéricos de sus elementos, en orden (`calificacion.valores_escala`)."""
     out = {}
     for s in ([] if scale is None else scale.itertuples()):
-        items = [x.strip() for x in str(s.scale).split(",")]
-        try:
-            out[int(s.id)] = [float(x) for x in items]
-        except ValueError:
-            if len(items) == SCALE_25_WORDS:
-                out[int(s.id)] = [2.0, 3.0, 4.0, 5.0]
+        values = valores_escala(s.scale)
+        if values:
+            out[int(s.id)] = values
     return out
 
 
@@ -299,11 +295,15 @@ def periodo(start_ts: int) -> str:
 
 
 def convertir(d: Canonico, calificacion: Calificacion) -> Canonico:
-    """Rellena `grades.score` (0–100) con la conversión dada, ítem a ítem."""
-    a = d.assessments.set_index(["course_id", "item_id"])
-    g = d.grades.copy()
+    """Rellena `grades.score` (0–100) con la conversión dada, ítem a ítem. Con una conversión de la
+    institución (`exige_25`), las tareas que no se califican de 2 a 5 quedan fuera (P21)."""
+    assessments, grades = d.assessments, d.grades
+    if getattr(calificacion, "exige_25", False):
+        assessments, grades, _ = excluir_tareas_fuera_de_escala(assessments, grades)
+    a = assessments.set_index(["course_id", "item_id"])
+    g = grades.copy()
     g["score"] = [calificacion.a_100(v, ItemCalificable(a.loc[(c, i), "module_type"], a.loc[(c, i), "grademin"],
                                                         a.loc[(c, i), "grademax"], a.loc[(c, i), "gradepass"]))
                   if pd.notna(v) else np.nan for c, i, v in zip(g["course_id"], g["item_id"], g["grade"])]
-    return Canonico(courses=d.courses, students=d.students, assessments=d.assessments, grades=g,
+    return Canonico(courses=d.courses, students=d.students, assessments=assessments, grades=g,
                     activity=d.activity).validate()

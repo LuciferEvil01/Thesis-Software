@@ -19,7 +19,7 @@ from dotenv import dotenv_values
 sys.path.insert(0, str(Path(__file__).parent))
 from curso_sintetico import CID, curso  # noqa: E402
 
-from alerta import calificacion, config, variables  # noqa: E402
+from alerta import calificacion, config, servicio, variables  # noqa: E402
 from alerta.fuentes import moodle  # noqa: E402
 from alerta.modelo.registro import Registro  # noqa: E402
 from alerta.moodle import cursos, sembrar  # noqa: E402
@@ -43,6 +43,18 @@ def php(code: str) -> str:
 
 def at(day: float) -> int:
     return int(START + day * DAY + 12 * 3600)
+
+
+VALIDATION = "alerta.calificacion:ProporcionalOULAD"
+
+
+@pytest.fixture(scope="module", autouse=True)
+def validation_grading():
+    """El curso sintético tiene notas de 0 a 100: la lógica del servicio se prueba con la conversión de
+    validación, sin el requisito de la escala de 2 a 5 (P21), que tiene su propia prueba."""
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("ALERTA_CALIFICACION", VALIDATION)
+        yield
 
 
 @pytest.fixture(scope="module")
@@ -183,3 +195,14 @@ def test_teacher_sees_report_and_requests(setup, sequence):
     # El botón deja una solicitud del profesor
     s.post(f"{base}/local/alertatemprana/request.php", data={"id": course["id"], "sesskey": sesskey})
     assert [r["reason"] for r in pending(client, course)] == ["profesor"]
+
+
+def test_tasks_not_graded_two_to_five_are_rejected(setup, monkeypatch):
+    """P21: con la conversión de la institución, un curso cuyas tareas no se califican de 2 a 5 no se
+    predice, y el profesor recibe el motivo."""
+    client, paquete, _, _ = setup
+    monkeypatch.delenv("ALERTA_CALIFICACION", raising=False)
+    seeded = sembrar.seed(sembrar.spec_from_canonico(curso(), CID, START, IDNUMBER + "-ESCALA", "Curso en 0-100"))
+    course = next(c for c in cursos.discover(client) if c["id"] == seeded["courseid"])
+    r = process_course(client, paquete, course, at(75))
+    assert r["decision"] == servicio.OUT_OF_SCALE and not r["publicadas"]

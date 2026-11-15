@@ -354,6 +354,40 @@ profesor»:
 - Las cadenas de la interfaz dicen «evaluación de referencia» en lugar de «tarea de referencia».
   Plugin 0.7.
 
+### P21 · 14-11-2026 · Las tareas se califican de 2 a 5; solo tareas y cuestionarios (O5 de la tutora; sustituye a parte de P20)
+
+Revisión de la tutora del 13/11 y decisión del autor (opción «a′»):
+
+- **Tipos que se analizan**: las tareas, siempre (disparan la predicción automática); los
+  cuestionarios, si el profesor los incluye (equivalen a las CMA, la única evaluación de calificación
+  automática cuyo efecto se comprobó con OULAD). Los demás tipos no se analizan por diseño: el foro,
+  el glosario y la base de datos se califican con valoraciones que Moodle puede sumar o contar
+  (miden cuánto participa el estudiante, no qué tal) y con escalas de palabras.
+- **Requisito de la escala**: una tarea solo entra si se califica de 2 a 5, como puntuación (mínimo 0
+  o 2, máximo 5) o con una escala de Moodle de cuatro elementos (numéricos 2, 3, 4 y 5, o palabras
+  como Mal, Regular, Bien y Excelente, que son la escala cubana con palabras). Las demás quedan fuera
+  con sus notas y el informe las nombra. Lo aplican las conversiones de la institución
+  (`Equipercentil`, `Anclada`: `exige_25`); la de validación con OULAD (`ProporcionalOULAD`, 0–100)
+  no lo exige. Misma regla en Python (`calificacion.tarea_en_escala`) y en PHP
+  (`coursecfg::graded_two_to_five`). La lectura en vivo traduce ahora las escalas de Moodle con
+  `calificacion.valores_escala`, como ya hacía el cargador de las tablas de EVEA
+  (`get_gradeitems` devuelve `gradetype` y los elementos de la escala). Si ninguna tarea cumple, el
+  servicio responde `servicio.OUT_OF_SCALE`.
+- Los cuestionarios se califican siempre en puntos y entran con la conversión lineal.
+
+### P22 · 14-11-2026 · Panel de control en el informe y aviso en la página del curso (sustituye a la página de P20)
+
+- **Panel del informe** (`#alertatemprana-panel`): botón «Calcular predicciones ahora», interruptor
+  «Incluir los cuestionarios del curso» (se guarda al pulsarlo; `evaluations.php` solo recibe el
+  formulario) y aviso de las tareas que no se califican de 2 a 5. Desaparece la página
+  «Evaluaciones que se analizan».
+- **Aviso en la página principal del curso** (hook `before_http_headers`, notificación de Moodle),
+  solo para quien puede ver el informe: última predicción (datos hasta, evaluación de referencia,
+  estudiantes en riesgo) o que todavía no hay ninguna, con «Ver informe» y «Calcular predicciones
+  ahora». El enlace del menú del curso queda en «Más» en Moodle 5 y casi no se veía.
+- Capturas: `informe_peticion.pdf` (el panel) y `curso_aviso.pdf` (`scripts/capturas_tesis.py`).
+  Plugin 0.8.
+
 ## Arquitectura
 
 ```

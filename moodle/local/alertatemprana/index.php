@@ -29,7 +29,8 @@ $PAGE->set_heading(format_string($course->fullname));
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('report', 'local_alertatemprana'));
 
-// Botón para pedir una predicción y estado de la última solicitud del profesor
+// Panel de control (P20, P21): estado de la última solicitud, botón para pedir una predicción,
+// interruptor de los cuestionarios y aviso de las tareas que no se califican de 2 a 5
 $pending = requests::pending($course->id);
 if ($pending) {
     echo $OUTPUT->notification(get_string('requestpending', 'local_alertatemprana',
@@ -40,6 +41,10 @@ if ($pending) {
         echo $OUTPUT->notification(s($last->message), 'info');
     }
 }
+echo html_writer::start_div('card mb-4', ['id' => 'alertatemprana-panel']);
+echo html_writer::start_div('card-body');
+echo html_writer::tag('h5', get_string('panel', 'local_alertatemprana'), ['class' => 'card-title']);
+
 echo html_writer::start_tag('form', ['method' => 'post', 'action' => new moodle_url('/local/alertatemprana/request.php'),
     'class' => 'mb-3']);
 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'id', 'value' => $course->id]);
@@ -49,11 +54,32 @@ echo html_writer::tag('button', get_string('requestnow', 'local_alertatemprana')
 echo html_writer::tag('span', get_string('requesthelp', 'local_alertatemprana'), ['class' => 'text-muted small ms-2']);
 echo html_writer::end_tag('form');
 
-// Evaluaciones que se analizan (P20) y enlace para cambiarlas
-$typenames = array_map(fn($t) => get_string('modulenameplural', $t), \local_alertatemprana\coursecfg::types($course->id));
-echo html_writer::tag('p', get_string('settingscurrent', 'local_alertatemprana', implode(', ', $typenames)) . ' ' .
-    html_writer::link(new moodle_url('/local/alertatemprana/evaluations.php', ['id' => $course->id]),
-        get_string('settingschange', 'local_alertatemprana')), ['class' => 'small mb-3']);
+// Interruptor de los cuestionarios: se guarda al pulsarlo
+$quizzes = \local_alertatemprana\coursecfg::quizzes($course->id);
+echo html_writer::start_tag('form', ['method' => 'post', 'action' => new moodle_url('/local/alertatemprana/evaluations.php'),
+    'class' => 'mb-1']);
+echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'id', 'value' => $course->id]);
+echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'quizzes', 'value' => 0]);
+echo html_writer::start_div('form-check form-switch');
+echo html_writer::empty_tag('input', ['type' => 'checkbox', 'class' => 'form-check-input', 'role' => 'switch',
+    'id' => 'alertatemprana-quizzes', 'name' => 'quizzes', 'value' => 1, 'checked' => $quizzes ? 'checked' : null,
+    'onchange' => 'this.form.submit()']);
+echo html_writer::label(get_string('quizzes', 'local_alertatemprana'), 'alertatemprana-quizzes', true,
+    ['class' => 'form-check-label']);
+echo html_writer::end_div();
+echo html_writer::tag('noscript', html_writer::tag('button', get_string('savechanges'),
+    ['type' => 'submit', 'class' => 'btn btn-secondary btn-sm mt-1']));
+echo html_writer::end_tag('form');
+echo html_writer::tag('p', get_string('quizzeshelp', 'local_alertatemprana'), ['class' => 'text-muted small mb-0']);
+
+$outofscale = \local_alertatemprana\coursecfg::out_of_scale($course->id);
+if ($outofscale) {
+    echo html_writer::div(get_string('outofscale', 'local_alertatemprana', implode(', ', $outofscale)),
+        'alert alert-warning mt-3 mb-0');
+}
+echo html_writer::end_div();
+echo html_writer::end_div();
 
 if (!$runs) {
     echo $OUTPUT->notification(get_string('noruns', 'local_alertatemprana'), 'info');

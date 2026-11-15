@@ -44,6 +44,8 @@ DAY = 86400
 GRADES, TEACHER = "notas", "profesor"
 NO_GRADES = "Todavía no hay ninguna evaluación con notas publicadas, así que no se puede predecir."
 NO_DATES = "El curso necesita fechas de inicio y de fin y tareas con fecha de entrega."
+OUT_OF_SCALE = ("Ninguna tarea del curso se califica de 2 a 5 (como puntuación de 2 a 5 o con una escala de "
+                "cuatro elementos), así que no se puede predecir. Revise la calificación de las tareas.")
 PARTIAL = ("La evaluación más reciente con notas tiene {graded} de {total} notas ({pct} %). Faltan {missing}: "
            "complete la calificación para predecir (hace falta al menos el {min} %). La predicción "
            "anterior, si la hay, sigue disponible en el informe.")
@@ -186,9 +188,10 @@ def process_course(c: Cliente, paquete: Paquete, course: dict, as_of: int, reque
     types = course_types(c, course["id"]) if types is None else frozenset(types) | {"assign"}
     evals = variables.evaluations(d, day, types)
     if not evals["is_tma"].any():
+        msg = OUT_OF_SCALE if report.get("tareas_fuera_de_escala") else NO_DATES
         for reason in (GRADES, TEACHER):
-            close(reason, NO_DATES)
-        return result | {"decision": NO_DATES}
+            close(reason, msg)
+        return result | {"decision": msg}
     result["evaluaciones"] = {int(e.item_id): ("completa" if e.completa else "con notas" if e.con_notas else "sin notas")
                               for e in evals.itertuples()}
 

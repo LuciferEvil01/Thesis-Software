@@ -19,6 +19,13 @@ Conversión de la tesis (Cap. 3; ECTS Users' Guide 2015, secc. 4.3–4.4; Kolen 
 La escala de entrenamiento (media de los suspensos y cuantiles de los aprobados) la calcula
 `escala_entrenamiento` y viaja en el paquete del modelo (`Paquete.escala`).
 
+Requisito de la escala de las tareas (P21): las conversiones de la institución (`Equipercentil` y
+`Anclada`, `exige_25 = True`) solo aceptan tareas calificadas de 2 a 5, como puntuación (mínimo 0 o 2,
+máximo 5) o como escala de Moodle de cuatro elementos (numéricos 2, 3, 4 y 5, o palabras ordenadas de
+menor a mayor, como Mal, Regular, Bien y Excelente; `valores_escala`). Las demás tareas no entran en
+el cálculo (`excluir_tareas_fuera_de_escala`). Los cuestionarios se califican siempre en puntos y entran
+con su conversión lineal.
+
 Para usar otra conversión: escribir una clase con `nombre` y `a_100` y elegirla con la variable de
 entorno `ALERTA_CALIFICACION=paquete.modulo:Clase` (o pasarla a `extract_course`).
 """
@@ -43,6 +50,7 @@ FALLBACK_FAIL = 20.0  # media de los suspensos si el paquete no trae su escala (
 MIN_CURSOS = 2  # tamaño mínimo del grupo de referencia (ECTS 2015: al menos dos cohortes)
 GRID = np.linspace(0, 1, 1001)  # cuantiles guardados de las notas de aprobado del entrenamiento
 SCALE_25, POINTS = "2-5", "puntos"
+SCALE_25_WORDS = 4  # una escala de cuatro elementos no numéricos se lee como 2, 3, 4 y 5 (Mal…Excelente)
 
 
 @dataclass(frozen=True)
@@ -74,6 +82,31 @@ class ItemCalificable:
         return float(nota) if self.escala == SCALE_25 else float(nota) / self.grademax
 
 
+def valores_escala(texto: str) -> list[float] | None:
+    """Elementos de una escala de Moodle → su valor numérico, en orden (la nota de escala es un índice
+    desde 1). Elementos numéricos: su valor; cuatro palabras: 2, 3, 4 y 5; otra escala: None."""
+    items = [x.strip() for x in str(texto).split(",")]
+    try:
+        return [float(x) for x in items]
+    except ValueError:
+        return [2.0, 3.0, 4.0, 5.0] if len(items) == SCALE_25_WORDS else None
+
+
+def tarea_en_escala(item: ItemCalificable) -> bool:
+    """P21: una tarea entra en el cálculo solo si se califica de 2 a 5; los demás tipos no se miran."""
+    return item.module_type != "assign" or item.escala == SCALE_25
+
+
+def excluir_tareas_fuera_de_escala(assessments: pd.DataFrame, grades: pd.DataFrame
+                                   ) -> tuple[pd.DataFrame, pd.DataFrame, list[int]]:
+    """Quita las tareas que no se califican de 2 a 5 y sus notas. Devuelve también sus `item_id`."""
+    ok = pd.Series([tarea_en_escala(ItemCalificable(r.module_type, r.grademin, r.grademax, r.gradepass))
+                    for r in assessments.itertuples()], index=assessments.index, dtype=bool)
+    excluded = sorted(int(i) for i in assessments.loc[~ok, "item_id"])
+    return (assessments[ok].reset_index(drop=True),
+            grades[~grades["item_id"].isin(excluded)].reset_index(drop=True), excluded)
+
+
 class Calificacion(Protocol):
     nombre: str
 
@@ -92,6 +125,7 @@ def escala_entrenamiento(scores) -> dict:
 
 class ProporcionalOULAD:
     nombre = "proporcional (nota / máxima · 100, como OULAD)"
+    exige_25 = False  # solo para reproducir OULAD (notas de 0 a 100)
 
     def a_100(self, nota: float, item: ItemCalificable) -> float:
         return nota / item.grademax * 100
@@ -99,6 +133,7 @@ class ProporcionalOULAD:
 
 class Anclada:
     nombre = "anclada (2 → media de los suspensos; 3, 4 y 5 en el tramo de aprobado)"
+    exige_25 = True
 
     def __init__(self, escala: dict | None = None):
         self.fail = float((escala or {}).get("suspenso_media", FALLBACK_FAIL))
@@ -114,6 +149,8 @@ class Anclada:
 
 class Equipercentil:
     """Equiparación entre aprobados con el grupo de referencia; `Anclada` en las escalas sin él."""
+
+    exige_25 = True
 
     def __init__(self, escala: dict | None = None, referencia: dict | None = None):
         self.anclada = Anclada(escala)
